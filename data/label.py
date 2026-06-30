@@ -25,7 +25,7 @@ RAW_DIR = Path("data/raw")
 PROCESSED_DIR = Path("data/processed")
 
 MIN_SILENCE_MS = 150
-RESUME_THRESHOLD_MS = 700
+RESUME_THRESHOLD_MS = 2000  # same speaker resumes within 2s → mid_thought
 WINDOW_MS = 2000
 SAMPLE_RATE = 16000
 

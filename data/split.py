@@ -1,9 +1,10 @@
-"""Speaker-disjoint train / val / test split.
+"""Meeting-disjoint train / val / test split.
 
-Speaker-disjoint ensures the model generalises to unseen speakers rather than
-memorising prosodic patterns from specific individuals.
+Splitting by meeting (not speaker) ensures no audio from the same recording
+session leaks across splits, which is the strongest leakage-prevention guarantee
+available in AMI.
 
-Splits: 80% train / 10% val / 10% test (by number of unique speakers).
+Splits: 80% train / 10% val / 10% test by number of unique meetings.
 
 Output:
   data/processed/train.parquet
@@ -29,23 +30,19 @@ def split(
     seed: int = 42,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     rng = np.random.default_rng(seed)
-    speakers = df["speaker_id"].str.split("_").str[:2].str.join("_").unique()
-    rng.shuffle(speakers)
+    meetings = df["meeting_id"].unique().copy()
+    rng.shuffle(meetings)
 
-    n = len(speakers)
+    n = len(meetings)
     n_test = max(1, int(n * test_frac))
     n_val = max(1, int(n * val_frac))
 
-    test_spk = set(speakers[:n_test])
-    val_spk = set(speakers[n_test : n_test + n_val])
-    train_spk = speakers[n_test + n_val :]  # noqa: F841 — kept for clarity
+    test_mtg = set(meetings[:n_test])
+    val_mtg = set(meetings[n_test : n_test + n_val])
 
-    # Extract session prefix for grouping (speaker_id format: corpus_session_spkid)
-    session_col = df["session_id"]
-
-    train = df[~session_col.isin(test_spk | val_spk)].copy()
-    val = df[session_col.isin(val_spk)].copy()
-    test = df[session_col.isin(test_spk)].copy()
+    train = df[~df["meeting_id"].isin(test_mtg | val_mtg)].copy()
+    val = df[df["meeting_id"].isin(val_mtg)].copy()
+    test = df[df["meeting_id"].isin(test_mtg)].copy()
 
     return train, val, test
 
@@ -65,11 +62,12 @@ def main(seed: int = 42) -> None:
         tc = split_df["label"].value_counts()
         print(
             f"{name:5s}: {len(split_df):5d} samples | "
-            f"turn_end {tc.get('turn_end', 0):4d} | mid_thought {tc.get('mid_thought', 0):4d} | "
-            f"{len(split_df['session_id'].unique()):3d} sessions"
+            f"turn_end {tc.get('turn_end', 0):4d} | "
+            f"mid_thought {tc.get('mid_thought', 0):4d} | "
+            f"{split_df['meeting_id'].nunique():3d} meetings"
         )
 
-    print(f"\nSaved splits → {PROCESSED_DIR}/{{train,val,test}}.parquet")
+    print(f"\nSaved → {PROCESSED_DIR}/{{train,val,test}}.parquet")
 
 
 if __name__ == "__main__":
