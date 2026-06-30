@@ -255,7 +255,7 @@ def _train_worker(rank: int, world_size: int, config: dict) -> None:
     gpu="A10G:2",
     volumes={REMOTE_DATA: volume},
     timeout=7200,
-    secrets=[modal.Secret.from_name("wandb-secret", required=False)],
+    secrets=[modal.Secret.from_name("wandb-secret")],
     memory=32768,
 )
 def train(
