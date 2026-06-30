@@ -8,8 +8,8 @@ dist/
 .eggs/
 
 # Data & model artifacts
-data/raw/
-data/processed/
+data/raw/              # audio files are huge, not committed
+data/processed/audio/  # derived audio segments, not committed
 model/checkpoints/
 model/onnx/
 *.ckpt

@@ -30,7 +30,7 @@ def split(
     seed: int = 42,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     rng = np.random.default_rng(seed)
-    meetings = df["meeting_id"].unique().copy()
+    meetings = df["meeting_id"].unique().astype(str)
     rng.shuffle(meetings)
 
     n = len(meetings)
