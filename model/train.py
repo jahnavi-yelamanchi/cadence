@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from model.cadence_model import CadenceConfig, CadenceModel, load_processor
 from model.dataset import TurnDetectionDataset, collate_fn
@@ -65,13 +66,15 @@ def train(args: argparse.Namespace) -> None:
     train_ds = TurnDetectionDataset(PROCESSED_DIR / "train.parquet", processor, augment=True)
     val_ds = TurnDetectionDataset(PROCESSED_DIR / "val.parquet", processor, augment=False)
 
+    # num_workers > 0 deadlocks on macOS MPS — force single-process loading
+    n_workers = 0 if device.type == "mps" else args.workers
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
-        collate_fn=collate_fn, num_workers=args.workers, pin_memory=(device.type == "cuda"),
+        collate_fn=collate_fn, num_workers=n_workers, pin_memory=(device.type == "cuda"),
     )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch_size * 2, shuffle=False,
-        collate_fn=collate_fn, num_workers=args.workers,
+        collate_fn=collate_fn, num_workers=n_workers,
     )
 
     class_weights = compute_class_weights(train_ds).to(device)
@@ -94,7 +97,8 @@ def train(args: argparse.Namespace) -> None:
         # ── Train ──────────────────────────────────────────────────────────
         model.train()
         train_loss = 0.0
-        for batch in train_loader:
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch:02d}/{args.epochs} [train]", leave=False)
+        for batch in pbar:
             input_values = batch["input_values"].to(device)
             labels = batch["labels"].to(device)
 
@@ -108,6 +112,7 @@ def train(args: argparse.Namespace) -> None:
             scheduler.step()
 
             train_loss += loss.item()
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         train_loss /= len(train_loader)
 
