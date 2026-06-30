@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd frontend && npm run build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "cd frontend && npm install",
+  "framework": null,
+  "rewrites": [
+    { "source": "/stream/:path*", "destination": "https://cadence-api.fly.dev/stream/:path*" },
+    { "source": "/health", "destination": "https://cadence-api.fly.dev/health" },
+    { "source": "/metrics/:path*", "destination": "https://cadence-api.fly.dev/metrics/:path*" }
+  ]
+}

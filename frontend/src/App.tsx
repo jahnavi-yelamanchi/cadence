@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MetricPanel } from "./components/MetricPanel";
 import { TurnIndicator } from "./components/TurnIndicator";
-import { TurnEvent, useAudioStream } from "./hooks/useAudioStream";
+import { useAudioStream } from "./hooks/useAudioStream";
 
 function useSessionId() {
   const id = useRef(crypto.randomUUID());

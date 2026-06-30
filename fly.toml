@@ -1,0 +1,26 @@
+app = "cadence-api"
+primary_region = "ewr"  # New Jersey — low latency for East Coast
+
+[build]
+  dockerfile = "server/Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 50
+    soft_limit = 25
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Keepalive so WebSocket connections don't drop
+[env]
+  PYTHONUNBUFFERED = "1"
