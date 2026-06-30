@@ -52,16 +52,21 @@ class TurnDetectionDataset(Dataset):
         }
 
     def _load_window(self, audio_path: str, pause_start_ms: int) -> np.ndarray:
-        """Load 2s window ending at pause_start_ms, resampled to 16kHz."""
-        start_sample = max(0, int((pause_start_ms - 2000) * SAMPLE_RATE / 1000))
-        end_sample = start_sample + WINDOW_SAMPLES
+        """Load last 2s of the utterance file (speech immediately before the pause).
 
-        audio, sr = sf.read(audio_path, start=start_sample, stop=end_sample, dtype="float32")
+        pause_start_ms is a meeting-clock timestamp, not a file offset — each
+        audio_path is an individual utterance clip, so the pause begins at the
+        END of the file. We read the trailing WINDOW_SAMPLES samples.
+        """
+        info = sf.info(audio_path)
+        start_sample = max(0, info.frames - WINDOW_SAMPLES)
+
+        audio, sr = sf.read(audio_path, start=start_sample, dtype="float32")
 
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
 
-        # Resample if needed (CANDOR is typically 44.1kHz)
+        # Resample if needed (AMI is 16kHz but guard anyway)
         if sr != SAMPLE_RATE:
             import librosa
             audio = librosa.resample(audio, orig_sr=sr, target_sr=SAMPLE_RATE)

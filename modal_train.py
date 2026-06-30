@@ -300,6 +300,14 @@ def main() -> None:
     print("\nDone! Run `modal run modal_train.py::pull_checkpoint` to download best.pt")
 
 
+@app.local_entrypoint()
+def retrain() -> None:
+    """Re-run training only — skips data setup (data already on volume)."""
+    print("Training with DDP on 2× A10G (data already on volume)...")
+    train.remote(freeze_layers=4)
+    print("\nDone! Run `modal run modal_train.py::pull_checkpoint` to download best.pt")
+
+
 @app.function(volumes={REMOTE_DATA: volume})
 def _read_checkpoint() -> bytes:
     ckpt_path = REMOTE_DATA / "checkpoints" / "best.pt"
