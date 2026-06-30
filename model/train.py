@@ -149,7 +149,8 @@ def train(args: argparse.Namespace) -> None:
         if val_fir < best_val_fir:
             best_val_fir = val_fir
             ckpt_path = CKPT_DIR / "best.pt"
-            torch.save({"epoch": epoch, "model_state": model.state_dict(), "val_fir": val_fir}, ckpt_path)
+            state = {"epoch": epoch, "model_state": model.state_dict(), "val_fir": val_fir}
+            torch.save(state, ckpt_path)
             print(f"  ✓ Saved best checkpoint (FIR={val_fir:.3f}) → {ckpt_path}")
 
     wandb.finish()

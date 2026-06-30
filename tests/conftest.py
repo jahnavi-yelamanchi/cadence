@@ -17,6 +17,7 @@ for _pkg in ["torch", "torchaudio", "transformers", "onnxruntime", "onnxruntime.
 
 # torch sub-modules the server imports
 import torch as _t  # noqa: E402  (already stubbed above)
+
 _t.hub = MagicMock()
 _t.backends = MagicMock()
 _t.backends.mps = MagicMock()

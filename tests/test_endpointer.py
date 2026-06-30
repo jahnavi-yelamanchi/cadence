@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from server.endpointer import CHUNK_SAMPLES, SILENCE_THRESHOLD, Endpointer, _softmax
+from server.endpointer import CHUNK_SAMPLES, Endpointer, _softmax
 
 
 def test_softmax_sums_to_one():
@@ -25,8 +25,6 @@ def test_silence_frame_counting(tmp_path, monkeypatch):
     monkeypatch.setattr(Endpointer, "_infer", fake_infer)
 
     # Patch __init__ to skip ONNX loading
-    original_init = Endpointer.__init__
-
     def patched_init(self, model_path=None):
         from collections import deque
         self._session = None

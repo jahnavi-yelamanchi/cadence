@@ -38,7 +38,7 @@ def split(
 
     test_spk = set(speakers[:n_test])
     val_spk = set(speakers[n_test : n_test + n_val])
-    train_spk = set(speakers[n_test + n_val :])
+    train_spk = speakers[n_test + n_val :]  # noqa: F841 — kept for clarity
 
     # Extract session prefix for grouping (speaker_id format: corpus_session_spkid)
     session_col = df["session_id"]

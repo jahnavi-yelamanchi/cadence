@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import onnx
 import onnxruntime as ort
 import torch
 from onnxruntime.quantization import QuantType, quantize_dynamic

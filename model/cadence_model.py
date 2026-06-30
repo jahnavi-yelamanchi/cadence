@@ -15,8 +15,8 @@ from transformers import Wav2Vec2Model, Wav2Vec2Processor
 
 BACKBONE = "facebook/wav2vec2-base"
 LABELS = ["turn_end", "mid_thought"]
-ID2LABEL = {i: l for i, l in enumerate(LABELS)}
-LABEL2ID = {l: i for i, l in enumerate(LABELS)}
+ID2LABEL = {i: lbl for i, lbl in enumerate(LABELS)}
+LABEL2ID = {lbl: i for i, lbl in enumerate(LABELS)}
 
 
 @dataclass
