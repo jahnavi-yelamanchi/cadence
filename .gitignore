@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+dist/
+*.egg-info/
+.eggs/
+
+# Data & model artifacts
+data/raw/
+data/processed/
+model/checkpoints/
+model/onnx/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Env
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
