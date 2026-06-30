@@ -6,13 +6,14 @@ Output: model/onnx/cadence.onnx  (FP32)
 Run: make export
 """
 
+import time
 from pathlib import Path
 
-import torch
+import numpy as np
 import onnx
 import onnxruntime as ort
-from onnxruntime.quantization import quantize_dynamic, QuantType
-import numpy as np
+import torch
+from onnxruntime.quantization import QuantType, quantize_dynamic
 
 from model.cadence_model import CadenceModel
 
@@ -66,7 +67,6 @@ def export() -> None:
     # Benchmark latency on dummy data
     times = []
     for _ in range(100):
-        import time
         t0 = time.perf_counter()
         sess.run(None, {"input_values": dummy_input.numpy()})
         times.append((time.perf_counter() - t0) * 1000)

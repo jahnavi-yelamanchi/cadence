@@ -15,9 +15,7 @@ WebSocket message protocol:
 """
 
 import json
-import struct
 import time
-import uuid
 from collections import defaultdict
 from pathlib import Path
 

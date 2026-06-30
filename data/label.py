@@ -1,18 +1,19 @@
-"""Auto-label pause events as 'turn_end' or 'mid_thought'.
+"""Auto-label pause events as 'turn_end' or 'mid_thought' from AMI metadata.
 
-Labeling logic:
-  - Find all silence gaps > MIN_SILENCE_MS within a speaker segment
-  - If the same speaker resumes within RESUME_THRESHOLD_MS  → mid_thought
-  - Otherwise (other speaker speaks or long silence)         → turn_end
-  - Extract a 2-second audio window ending at pause onset as the model input
+Labeling logic (applied per meeting):
+  - Sort utterances by begin_time
+  - For each adjacent pair (A, B): gap = B.begin_time - A.end_time
+  - If gap < MIN_SILENCE_MS: skip (too short, not a real pause)
+  - If gap <= RESUME_THRESHOLD_MS AND same speaker continues: mid_thought
+  - Otherwise: turn_end
+  - Extract the 2s audio window BEFORE the pause onset from A's audio
 
-Output: data/processed/labels.parquet with columns:
-  audio_path, pause_start_ms, pause_end_ms, label, speaker_id, session_id
+Output: data/processed/labels.parquet
+  columns: audio_path, pause_start_ms, pause_end_ms, gap_ms, label, speaker_id, meeting_id
 
 Run: make data-label
 """
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -22,105 +23,74 @@ from tqdm import tqdm
 
 RAW_DIR = Path("data/raw")
 PROCESSED_DIR = Path("data/processed")
-WINDOW_MS = 2000        # audio context window fed to model
-MIN_SILENCE_MS = 150    # ignore sub-150ms gaps (breath, hesitation)
-RESUME_THRESHOLD_MS = 700  # same speaker resumes → mid_thought
+
+MIN_SILENCE_MS = 150
+RESUME_THRESHOLD_MS = 700
+WINDOW_MS = 2000
+SAMPLE_RATE = 16000
 
 
-def load_candor_turns(session_dir: Path) -> list[dict]:
-    """Load speaker turn annotations from CANDOR JSON transcript."""
-    transcript_file = session_dir / "transcript.json"
-    if not transcript_file.exists():
-        return []
-
-    with transcript_file.open() as f:
-        transcript = json.load(f)
-
-    turns = []
-    for utt in transcript.get("utterances", []):
-        turns.append(
-            {
-                "speaker": utt["speaker"],
-                "start_ms": int(utt["start"] * 1000),
-                "end_ms": int(utt["end"] * 1000),
-            }
-        )
-    return sorted(turns, key=lambda t: t["start_ms"])
+def load_meeting_audio(audio_path: str) -> np.ndarray:
+    audio, sr = sf.read(audio_path, dtype="float32")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    return audio
 
 
-def find_pauses(turns: list[dict]) -> list[dict]:
-    """Find intra-speaker silence events and label each."""
-    pauses = []
-    for i, turn in enumerate(turns):
-        # Look ahead: is there a gap between this turn's end and the next event?
-        next_start = turns[i + 1]["start_ms"] if i + 1 < len(turns) else turn["end_ms"] + 5000
-        gap_ms = next_start - turn["end_ms"]
-
-        if gap_ms < MIN_SILENCE_MS:
-            continue
-
-        next_speaker = turns[i + 1]["speaker"] if i + 1 < len(turns) else None
-        same_speaker_resumes = next_speaker == turn["speaker"] and gap_ms <= RESUME_THRESHOLD_MS
-        label = "mid_thought" if same_speaker_resumes else "turn_end"
-
-        pauses.append(
-            {
-                "speaker_id": turn["speaker"],
-                "pause_start_ms": turn["end_ms"],
-                "pause_end_ms": next_start,
-                "gap_ms": gap_ms,
-                "label": label,
-            }
-        )
-    return pauses
-
-
-def extract_audio_window(audio_path: Path, pause_start_ms: int, sample_rate: int = 16000) -> bool:
-    """Return True if we can extract a valid 2s window ending at pause_start_ms."""
-    try:
-        info = sf.info(audio_path)
-        duration_ms = int(info.duration * 1000)
-        window_start_ms = pause_start_ms - WINDOW_MS
-        return window_start_ms >= 0 and pause_start_ms <= duration_ms
-    except Exception:
-        return False
-
-
-def process_candor(raw_dir: Path) -> pd.DataFrame:
-    candor_dir = raw_dir / "candor"
-    if not candor_dir.exists():
-        print("CANDOR data not found — run make data-download first")
+def process_split(split: str) -> pd.DataFrame:
+    meta_path = RAW_DIR / "ami" / split / "metadata.parquet"
+    if not meta_path.exists():
+        print(f"  [skip] {split} metadata not found — run make data-download first")
         return pd.DataFrame()
 
+    df = pd.read_parquet(meta_path)
     records = []
-    sessions = sorted(candor_dir.glob("*/"))
 
-    for session in tqdm(sessions, desc="CANDOR sessions"):
-        audio_file = session / "audio.wav"
-        if not audio_file.exists():
-            audio_file = next(session.glob("*.wav"), None)
-        if audio_file is None:
-            continue
+    for meeting_id, group in tqdm(df.groupby("meeting_id"), desc=f"  {split}"):
+        utterances = group.sort_values("begin_time").reset_index(drop=True)
 
-        turns = load_candor_turns(session)
-        if not turns:
-            continue
+        for i in range(len(utterances) - 1):
+            curr = utterances.iloc[i]
+            nxt = utterances.iloc[i + 1]
 
-        pauses = find_pauses(turns)
-        for pause in pauses:
-            if extract_audio_window(audio_file, pause["pause_start_ms"]):
-                records.append(
-                    {
-                        "audio_path": str(audio_file),
-                        "pause_start_ms": pause["pause_start_ms"],
-                        "pause_end_ms": pause["pause_end_ms"],
-                        "gap_ms": pause["gap_ms"],
-                        "label": pause["label"],
-                        "speaker_id": f"candor_{session.name}_{pause['speaker_id']}",
-                        "session_id": session.name,
-                        "corpus": "candor",
-                    }
-                )
+            gap_ms = (nxt["begin_time"] - curr["end_time"]) * 1000
+            if gap_ms < MIN_SILENCE_MS:
+                continue
+
+            same_speaker = curr["speaker_id"] == nxt["speaker_id"]
+            label = (
+                "mid_thought"
+                if same_speaker and gap_ms <= RESUME_THRESHOLD_MS
+                else "turn_end"
+            )
+
+            # The model window: 2s of audio ending at the pause onset
+            pause_start_ms = int(curr["end_time"] * 1000)
+            window_start_ms = max(0, pause_start_ms - WINDOW_MS)
+
+            # Verify the audio segment exists and is long enough
+            if not Path(curr["audio_path"]).exists():
+                continue
+            audio_duration_ms = int(
+                sf.info(curr["audio_path"]).duration * 1000
+            )
+            if audio_duration_ms < WINDOW_MS // 2:
+                continue
+
+            records.append(
+                {
+                    "audio_path": curr["audio_path"],
+                    "pause_start_ms": pause_start_ms,
+                    "window_start_ms": window_start_ms,
+                    "pause_end_ms": int(nxt["begin_time"] * 1000),
+                    "gap_ms": round(gap_ms, 1),
+                    "label": label,
+                    "speaker_id": f"ami_{meeting_id}_{curr['speaker_id']}",
+                    "meeting_id": meeting_id,
+                    "corpus": "ami",
+                    "split": split,
+                }
+            )
 
     return pd.DataFrame(records)
 
@@ -129,24 +99,27 @@ def main() -> None:
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
     dfs = []
-    df_candor = process_candor(RAW_DIR)
-    if not df_candor.empty:
-        dfs.append(df_candor)
-        print(f"CANDOR: {len(df_candor)} pause events")
+    for split in ["train", "validation", "test"]:
+        df_split = process_split(split)
+        if not df_split.empty:
+            dfs.append(df_split)
+            print(f"  {split}: {len(df_split):,} pause events")
 
     if not dfs:
-        print("No data processed — download corpora first with: make data-download")
+        print("No data processed — run make data-download first")
         return
 
     df = pd.concat(dfs, ignore_index=True)
 
-    label_counts = df["label"].value_counts()
-    print(f"\nLabel distribution:\n{label_counts}")
-    print(f"Class balance: {label_counts['mid_thought'] / len(df):.1%} mid_thought")
+    counts = df["label"].value_counts()
+    print(f"\nTotal: {len(df):,} events")
+    print(f"  turn_end:   {counts.get('turn_end', 0):,}")
+    print(f"  mid_thought: {counts.get('mid_thought', 0):,}")
+    print(f"  balance: {counts.get('mid_thought', 0) / len(df):.1%} mid_thought")
 
-    out_path = PROCESSED_DIR / "labels.parquet"
-    df.to_parquet(out_path, index=False)
-    print(f"\nSaved {len(df)} samples → {out_path}")
+    out = PROCESSED_DIR / "labels.parquet"
+    df.to_parquet(out, index=False)
+    print(f"\nSaved → {out}")
 
 
 if __name__ == "__main__":

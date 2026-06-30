@@ -63,7 +63,7 @@ make dev
 ## Full pipeline
 
 ```bash
-make data-download   # download CANDOR + AMI corpora (~50GB)
+make data-download   # download AMI Meeting Corpus via HuggingFace (~20GB audio)
 make data-label      # auto-label pause events from turn annotations
 make data-split      # speaker-disjoint train/val/test split
 make train           # fine-tune on MPS/CUDA/CPU (~4h on M3 Pro)

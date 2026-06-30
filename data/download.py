@@ -1,80 +1,92 @@
-"""Download and unpack the corpora used for Cadence training.
+"""Download training corpora via HuggingFace datasets.
 
-Corpora used:
-  - CANDOR (Zenodo, ~45h dyadic conversational speech, free)
-  - AMI Meeting Corpus (OpenSLR, ~100h meeting speech, free)
+Corpus used:
+  AMI Meeting Corpus (edinburghcstr/ami, ~100h, Apache 2.0)
+  IHM (individual headset mic) — clean per-speaker audio with word-level timestamps.
+
+HF datasets handles caching automatically (~/.cache/huggingface).
+Audio arrays + metadata are saved as parquet to data/raw/ami/.
 
 Run: make data-download
 """
 
 import argparse
-import zipfile
 from pathlib import Path
 
-import requests
+import numpy as np
+import pandas as pd
+import soundfile as sf
+from datasets import load_dataset
 from tqdm import tqdm
 
 RAW_DIR = Path("data/raw")
-
-# Zenodo record for CANDOR corpus
-CANDOR_URL = "https://zenodo.org/record/7121435/files/candor-corpus.zip"
-# AMI headset mix (IHM) from OpenSLR
-AMI_URL = "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
+SAMPLE_RATE = 16000
 
 
-def download_file(url: str, dest: Path, desc: str) -> None:
-    """Stream-download a file with a progress bar."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.exists():
-        print(f"  [skip] {dest.name} already exists")
+def download_ami(split: str) -> None:
+    out_dir = RAW_DIR / "ami" / split
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    meta_path = out_dir / "metadata.parquet"
+    if meta_path.exists():
+        print(f"  [skip] {split} metadata already exists")
         return
 
-    resp = requests.get(url, stream=True, timeout=60)
-    resp.raise_for_status()
-    total = int(resp.headers.get("content-length", 0))
+    print(f"  Loading AMI {split} from HuggingFace (cached after first run)...")
+    ds = load_dataset("edinburghcstr/ami", "ihm", split=split, trust_remote_code=True)
+    print(f"  {len(ds):,} utterances")
 
-    with dest.open("wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc=desc) as bar:
-        for chunk in resp.iter_content(chunk_size=8192):
-            f.write(chunk)
-            bar.update(len(chunk))
+    records = []
+    audio_dir = out_dir / "audio"
+    audio_dir.mkdir(exist_ok=True)
 
+    for row in tqdm(ds, desc=f"  saving {split}"):
+        audio_array = np.array(row["audio"]["array"], dtype=np.float32)
+        sr = row["audio"]["sampling_rate"]
 
-def unpack(archive: Path, dest: Path) -> None:
-    if dest.exists():
-        print(f"  [skip] {dest.name} already unpacked")
-        return
-    print(f"  unpacking {archive.name} → {dest}")
-    with zipfile.ZipFile(archive) as z:
-        z.extractall(dest)
+        # Resample to 16kHz if needed
+        if sr != SAMPLE_RATE:
+            import librosa
+            audio_array = librosa.resample(audio_array, orig_sr=sr, target_sr=SAMPLE_RATE)
 
+        # Save audio segment as wav
+        uid = f"{row['meeting_id']}_{row['audio_id']}"
+        wav_path = audio_dir / f"{uid}.wav"
+        if not wav_path.exists():
+            sf.write(wav_path, audio_array, SAMPLE_RATE)
 
-def main(corpora: list[str]) -> None:
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-
-    if "candor" in corpora:
-        print("==> CANDOR corpus")
-        archive = RAW_DIR / "candor-corpus.zip"
-        download_file(CANDOR_URL, archive, "CANDOR")
-        unpack(archive, RAW_DIR / "candor")
-
-    if "ami" in corpora:
-        print("==> AMI corpus annotations")
-        archive = RAW_DIR / "ami_annotations.zip"
-        download_file(AMI_URL, archive, "AMI annotations")
-        unpack(archive, RAW_DIR / "ami")
-        print(
-            "  NOTE: AMI audio must be downloaded separately from https://groups.inf.ed.ac.uk/ami/download/"
+        records.append(
+            {
+                "uid": uid,
+                "meeting_id": row["meeting_id"],
+                "speaker_id": row["speaker_id"],
+                "begin_time": float(row["begin_time"]),
+                "end_time": float(row["end_time"]),
+                "audio_path": str(wav_path),
+                "text": row.get("segment_text", ""),
+            }
         )
+
+    df = pd.DataFrame(records).sort_values(["meeting_id", "begin_time"]).reset_index(drop=True)
+    df.to_parquet(meta_path, index=False)
+    print(f"  Saved {len(df):,} utterances → {meta_path}")
+
+
+def main(splits: list[str]) -> None:
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    print("==> AMI Meeting Corpus (via HuggingFace datasets)")
+    for split in splits:
+        download_ami(split)
+    print("\nDownload complete. Next: make data-label")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download Cadence training corpora")
     parser.add_argument(
-        "--corpora",
+        "--splits",
         nargs="+",
-        default=["candor", "ami"],
-        choices=["candor", "ami"],
-        help="Which corpora to download (default: all)",
+        default=["train", "validation", "test"],
+        choices=["train", "validation", "test"],
     )
     args = parser.parse_args()
-    main(args.corpora)
+    main(args.splits)

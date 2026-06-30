@@ -33,7 +33,7 @@ test:
 # ── Data pipeline ─────────────────────────────────────────────────────────
 
 data-download:
-	PYTHONPATH=. uv run python data/download.py
+	PYTHONPATH=. uv run python data/download.py --splits train validation test
 
 data-label:
 	PYTHONPATH=. uv run python data/label.py

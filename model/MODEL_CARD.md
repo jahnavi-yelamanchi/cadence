@@ -14,8 +14,7 @@ Classifies 2-second audio windows (ending at a detected silence onset) as:
 
 | Corpus | Hours | License |
 |---|---|---|
-| CANDOR | ~45h | CC BY 4.0 |
-| AMI Meeting | ~100h | CC BY 4.0 |
+| AMI Meeting Corpus (IHM) | ~100h | CC BY 4.0 |
 
 Silence events > 150ms were auto-labelled from speaker-turn annotations.
 Split is speaker-disjoint (no speaker appears in both train and test).
